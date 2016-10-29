@@ -10,7 +10,6 @@ resolvers += Resolver.bintrayRepo("cakesolutions", "maven")
 assemblyOption in assembly ~= { _.copy(includeScala = false) }
 
 libraryDependencies ++= Seq(
-  "net.cakesolutions" %% "scala-kafka-client" % "0.10.0.0",
   "org.apache.spark" %% "spark-streaming" % sparkVersion,
   "org.apache.spark" %% "spark-streaming-kafka-0-10" % sparkVersion
 )
