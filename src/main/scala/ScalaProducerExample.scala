@@ -11,7 +11,10 @@ import scala.collection.JavaConverters._
 object ScalaProducerExample extends App {
 
   produce()
-  consume()
+  Thread.sleep(1000)
+  //consume()
+
+  val topic: String = "marketdata"
 
   def produce() {
     val producer = KafkaProducer(
@@ -21,7 +24,7 @@ object ScalaProducerExample extends App {
     println("sending data...")
 
     val random = scala.util.Random
-    val numberOfTicks = 1000
+    val numberOfTicks = 10000
     val endOfStartOfDayAuctionPhase = 25
     val startOfEndOfDayAuctionPhase = 950
 
@@ -30,10 +33,12 @@ object ScalaProducerExample extends App {
         val inAuction = tick <= endOfStartOfDayAuctionPhase || tick >= startOfEndOfDayAuctionPhase
         val phase = if (inAuction) TradingPhases.Auction else TradingPhases.Continuous
         val md = new MarketData(random.nextInt(50), LocalDateTime.now(), random.nextDouble(), phase)
-        val str = s"${md.id};${md.time};${md.last};${md.tradingPhase}"
-        new ProducerRecord[String, String]("lol", str)
+        val str = s"${md.stockId};${md.time};${md.last};${md.tradingPhase}" // bid, ask, volume...
+        Thread.sleep(10)
+
+        new ProducerRecord[String, String](topic, md.stockId.toString, str)
       })
-      .foreach(producer.send(_))
+      .foreach(producer.send)
     //val lastPrices = new Map[Int, Int]()
 
     println("data sent... closing!")
@@ -44,7 +49,7 @@ object ScalaProducerExample extends App {
       KafkaConsumer.Conf(new StringDeserializer(), new StringDeserializer(), bootstrapServers = "localhost:9092", groupId = "group")
     )
 
-    val topics = util.Arrays.asList("lol")
+    val topics = util.Arrays.asList(topic)
 
     consumer.subscribe(topics)
 
@@ -52,21 +57,16 @@ object ScalaProducerExample extends App {
       println(s"Loop ${i}")
 
       val records = consumer.poll(250).asScala
-      val marketData = records.map(rec => {
-        val items = rec.value().split(";")
-        MarketData(items(0).toInt, LocalDateTime.parse(items(1)), items(2).toDouble, TradingPhases.withName(items(3)))
-      })
+      val marketData = records.map(rec => MarketData.deserialize(rec.value))
 
-      marketData.foreach(md => println(s"${md.id};${md.time};${md.last}"))
+      marketData.zipWithIndex foreach { e =>
+        val (md, i) = e
+        println(s"${i}: ${md.stockId};${md.time};${md.last};${md.tradingPhase}")
+      }
 
     }
 
     println("data received... closing!")
 
   }
-
-
-
 }
-
-case class MarketData(id: Int, time: LocalDateTime, last: Double, tradingPhase: TradingPhases)
