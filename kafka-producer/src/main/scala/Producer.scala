@@ -10,11 +10,16 @@ import scala.collection.JavaConverters._
 
 object Producer extends App {
 
+
+
+  val topic: String = "marketdata"
+  val random = scala.util.Random
+  val volatility = 0.05
+
+
   produce()
   Thread.sleep(1000)
   //consume()
-
-  val topic: String = "marketdata"
 
   def produce() {
     val producer = KafkaProducer(
@@ -23,25 +28,57 @@ object Producer extends App {
 
     println("sending data...")
 
-    val random = scala.util.Random
+
     val numberOfTicks = 10000
-    val endOfStartOfDayAuctionPhase = 25
-    val startOfEndOfDayAuctionPhase = 950
+    val endOfStartOfDayAuctionPhase = 500
+    val startOfEndOfDayAuctionPhase = 9500
 
-    val marketData = (1 to numberOfTicks)
-      .map(tick => {
-        val inAuction = tick <= endOfStartOfDayAuctionPhase || tick >= startOfEndOfDayAuctionPhase
-        val phase = if (inAuction) TradingPhases.Auction else TradingPhases.Continuous
-        val md = new MarketData(random.nextInt(50), LocalDateTime.now(), random.nextDouble(), phase)
-        val str = s"${md.stockId};${md.time};${md.last};${md.tradingPhase}" // bid, ask, volume...
-        Thread.sleep(10)
+    val numberOfSecurities = 10
 
-        new ProducerRecord[String, String](topic, md.stockId.toString, str)
-      })
-      .foreach(producer.send)
+    def generateBasePrices: Map[Int, Double] = {
+      var lastPrices: Map[Int, Double] = Map()
+
+      var secId = 0
+      for (secId <- 0 to numberOfSecurities)
+        lastPrices += (secId -> random.nextDouble() * 50)
+
+      lastPrices
+    }
+
+    var lastPrices = generateBasePrices
+
+     (1 to numberOfTicks).foreach(tick => {
+       val inAuction = tick <= endOfStartOfDayAuctionPhase || tick >= startOfEndOfDayAuctionPhase
+       val phase = if (inAuction) TradingPhases.Auction else TradingPhases.Continuous
+       val securityId = random.nextInt(numberOfSecurities)
+       val lastPrice = lastPrices(securityId)
+       val newPrice = getRandomPrice(lastPrice)
+
+       lastPrices += (securityId -> newPrice)
+
+       val md = new MarketData(securityId, LocalDateTime.now(), newPrice, phase)
+
+       val str = f"${md.stockId};${md.time};${md.last}%.2f;${md.tradingPhase}" // bid, ask, volume...
+       Thread.sleep(10)
+
+       println(str)
+       val record = new ProducerRecord[String, String](topic, md.stockId.toString, str)
+       producer.send(record)
+     })
+
     //val lastPrices = new Map[Int, Int]()
 
     println("data sent... closing!")
+  }
+
+  def getRandomPrice(basePrice: Double): Double = {
+
+    val rnd = random.nextFloat()
+    var change_percent = 2 * volatility * rnd
+    if (change_percent > volatility)
+      change_percent -=  (2 * volatility)
+    val change_amount = basePrice * change_percent
+    basePrice + change_amount
   }
 
   def consume(): Unit = {
@@ -61,7 +98,7 @@ object Producer extends App {
 
       marketData.zipWithIndex foreach { e =>
         val (md, i) = e
-        println(s"${i}: ${md.stockId};${md.time};${md.last};${md.tradingPhase}")
+        println(s"${i}: ${md.stockId};${md.time};${md.last%1.2f};${md.tradingPhase}")
       }
 
     }
